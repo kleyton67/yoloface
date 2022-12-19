@@ -17,9 +17,9 @@ from models.yolo import Model
 from utils.datasets import letterbox
 from utils.preprocess_utils import align_faces
 from utils.general import check_img_size, non_max_suppression_face, \
-    scale_coords,scale_coords_landmarks,filter_boxes
+    scale_coords,scale_coords_landmarks
 
-class YoloDetector:
+class YoloDetector(object):
     def __init__(self, weights_name='yolov5n_state_dict.pt', config_name='yolov5n.yaml', device='cuda:0', min_face=100, target_size=None, frontal=False):
             """
             weights_name: name of file with network weights in weights/ folder.
@@ -83,9 +83,11 @@ class YoloDetector:
             Returns:
                 bboxes: list of arrays with 4 coordinates of bounding boxes with format x1,y1,x2,y2.
                 points: list of arrays with coordinates of 5 facial keypoints (eyes, nose, lips corners).
+                scores: list of class confidences
         """
         bboxes = [[] for i in range(len(origimgs))]
         landmarks = [[] for i in range(len(origimgs))]
+        scores = [[] for i in range(len(origimgs))]
         
         pred = non_max_suppression_face(pred, conf_thres, iou_thres)
         
@@ -97,6 +99,7 @@ class YoloDetector:
             det = pred[i].cpu()
             scaled_bboxes = scale_coords(imgs[i].shape[1:], det[:, :4], img_shape).round()
             scaled_cords = scale_coords_landmarks(imgs[i].shape[1:], det[:, 5:15], img_shape).round()
+            scores.append(float(det[0][4]))
 
             for j in range(det.size()[0]):
                 box = (det[j, :4].view(1, 4) / gn).view(-1).tolist()
@@ -108,7 +111,7 @@ class YoloDetector:
                 lm = [lm[i:i+2] for i in range(0,len(lm),2)]
                 bboxes[i].append(box)
                 landmarks[i].append(lm)
-        return bboxes, landmarks
+        return bboxes, landmarks, scores
 
     def get_frontal_predict(self, box, points):
         '''
@@ -149,6 +152,7 @@ class YoloDetector:
             Returns:
                 bboxes: list of arrays with 4 coordinates of bounding boxes with format x1,y1,x2,y2.
                 points: list of arrays with coordinates of 5 facial keypoints (eyes, nose, lips corners).
+                scores: list of floats about the class confidence
         '''
         one_by_one = False
         # Pass input images through face detector
@@ -180,9 +184,9 @@ class YoloDetector:
             images = self._preprocess(images)
             with torch.inference_mode(): # change this with torch.no_grad() for pytorch <1.8 compatibility
                 pred = self.detector(images)[0]
-            bboxes, points = self._postprocess(images, origimgs, pred, conf_thres, iou_thres)
+            bboxes, points, scores = self._postprocess(images, origimgs, pred, conf_thres, iou_thres)
 
-        return bboxes, points
+        return bboxes, points, scores
 
     def __call__(self,*args):
         return self.predict(*args)
